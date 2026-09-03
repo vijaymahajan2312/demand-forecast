@@ -15,7 +15,7 @@ from sklearn.metrics import (
 
 from lightgbm import LGBMRegressor
 
-from features import (
+from src.features import (
     create_features,
     FEATURES,
     TARGET
