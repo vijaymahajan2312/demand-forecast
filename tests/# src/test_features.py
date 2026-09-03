@@ -83,13 +83,25 @@ def test_prepare_data():
 
     result = prepare_data(df)
 
+    # Date should be datetime
     assert pd.api.types.is_datetime64_any_dtype(
         result["Date"]
     )
 
-    assert result["Date"].is_monotonic_increasing is False or True
+    # Required grouping columns should exist
+    assert "Store ID" in result.columns
+    assert "Product ID" in result.columns
 
-    assert list(result.columns) == list(df.columns)
+    # Data should be sorted by Store, Product and Date
+    assert result[
+        ["Store ID", "Product ID", "Date"]
+    ].equals(
+        result[
+            ["Store ID", "Product ID", "Date"]
+        ].sort_values(
+            ["Store ID", "Product ID", "Date"]
+        ).reset_index(drop=True)
+    )
 
 
 # ---------------------------------------------------------
