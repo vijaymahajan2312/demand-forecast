@@ -1,0 +1,15 @@
+resources:
+  jobs:
+
+    demand_forecasting_training:
+
+      name: demand_forecasting_training
+
+      tasks:
+
+        - task_key: train_demand_model
+
+          spark_python_task:
+            python_file: ../src/train.py
+
+          existing_cluster_id: "<YOUR_CLUSTER_ID>"
