@@ -12,4 +12,4 @@ resources:
           spark_python_task:
             python_file: ../src/train.py
 
-          existing_cluster_id: "<YOUR_CLUSTER_ID>"
+          existing_cluster_id: "..."
