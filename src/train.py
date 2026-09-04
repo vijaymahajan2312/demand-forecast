@@ -26,7 +26,7 @@ from src.features import (
 # Configuration
 # ---------------------------------------------------------
 
-DATA_PATH = "/Workspace/Users/darshanpatil6968@gmail.com/demand_forecast/cleaned_demand_forecasting_data.csv"
+DATA_PATH = "/Volumes/demand_catalog/default/demand_volume/demand_forecasting.csv"
 
 EXPERIMENT_NAME = "/Shared/demand-forecasting"
 
