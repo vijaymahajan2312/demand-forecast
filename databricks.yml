@@ -1,0 +1,5 @@
+bundle:
+  name: demand_forecasting
+
+include:
+  - resources/*.yml
