@@ -1,3 +1,4 @@
+```python
 # src/train.py
 
 import mlflow
@@ -7,6 +8,7 @@ import pandas as pd
 import numpy as np
 
 from mlflow.models import infer_signature
+
 from sklearn.metrics import (
     mean_absolute_error,
     mean_squared_error,
@@ -107,6 +109,108 @@ def time_split(df):
 
 
 # ---------------------------------------------------------
+# Prepare categorical features
+# ---------------------------------------------------------
+
+def prepare_categorical_features(
+    X_train,
+    X_valid,
+    X_test
+):
+    """
+    Make categorical columns consistent across
+    train, validation and test datasets.
+    """
+
+    categorical_columns = [
+        "Store_ID",
+        "Product_ID",
+        "Category",
+        "Region",
+        "Weather_Condition",
+        "Seasonality",
+        "Epidemic"
+    ]
+
+    for col in categorical_columns:
+
+        if col not in X_train.columns:
+            continue
+
+        # Convert all datasets to string first
+        X_train[col] = X_train[col].astype(str)
+        X_valid[col] = X_valid[col].astype(str)
+        X_test[col] = X_test[col].astype(str)
+
+        # Create one common category list
+        categories = sorted(
+            set(X_train[col].unique())
+            | set(X_valid[col].unique())
+            | set(X_test[col].unique())
+        )
+
+        # Apply identical categories to all datasets
+        X_train[col] = pd.Categorical(
+            X_train[col],
+            categories=categories
+        )
+
+        X_valid[col] = pd.Categorical(
+            X_valid[col],
+            categories=categories
+        )
+
+        X_test[col] = pd.Categorical(
+            X_test[col],
+            categories=categories
+        )
+
+    return (
+        X_train,
+        X_valid,
+        X_test
+    )
+
+
+# ---------------------------------------------------------
+# Clean feature names
+# ---------------------------------------------------------
+
+def clean_feature_names(
+    X_train,
+    X_valid,
+    X_test
+):
+
+    rename_map = {
+        col: (
+            col
+            .strip()
+            .replace(" ", "_")
+        )
+        for col in X_train.columns
+    }
+
+    X_train = X_train.rename(
+        columns=rename_map
+    )
+
+    X_valid = X_valid.rename(
+        columns=rename_map
+    )
+
+    X_test = X_test.rename(
+        columns=rename_map
+    )
+
+    return (
+        X_train,
+        X_valid,
+        X_test
+    )
+
+
+# ---------------------------------------------------------
 # Training
 # ---------------------------------------------------------
 
@@ -160,6 +264,39 @@ def train_model():
 
     X_test = test_df[FEATURES].copy()
     y_test = test_df[TARGET].copy()
+
+    # -----------------------------------------------------
+    # Clean feature names
+    # -----------------------------------------------------
+
+    (
+        X_train,
+        X_valid,
+        X_test
+    ) = clean_feature_names(
+        X_train,
+        X_valid,
+        X_test
+    )
+
+    # -----------------------------------------------------
+    # Prepare categorical features
+    # -----------------------------------------------------
+
+    (
+        X_train,
+        X_valid,
+        X_test
+    ) = prepare_categorical_features(
+        X_train,
+        X_valid,
+        X_test
+    )
+
+    print(
+        "Number of features:",
+        len(X_train.columns)
+    )
 
     # -----------------------------------------------------
     # MLflow
@@ -286,10 +423,19 @@ def train_model():
         # Model signature
         # -------------------------------------------------
 
+        train_prediction = model.predict(
+            X_train
+        )
+
         signature = infer_signature(
             X_train,
-            model.predict(X_train)
+            train_prediction
         )
+
+        # IMPORTANT:
+        # Use a copy of the actual training dataframe
+        # as the input example so categorical definitions
+        # remain identical to the trained model.
 
         input_example = X_train.iloc[
             [0]
@@ -341,29 +487,76 @@ def train_model():
             input_example=input_example
         )
 
+        # -------------------------------------------------
+        # Output
+        # -------------------------------------------------
+
         print("\nTraining completed.")
 
         print("\nValidation Metrics")
         print("------------------")
-        print("MAE  :", val_mae)
-        print("RMSE :", val_rmse)
-        print("R2   :", val_r2)
-        print("MAPE :", val_mape)
+
+        print(
+            "MAE  :",
+            val_mae
+        )
+
+        print(
+            "RMSE :",
+            val_rmse
+        )
+
+        print(
+            "R2   :",
+            val_r2
+        )
+
+        print(
+            "MAPE :",
+            val_mape
+        )
 
         print("\nTest Metrics")
         print("------------")
-        print("MAE  :", test_mae)
-        print("RMSE :", test_rmse)
-        print("R2   :", test_r2)
-        print("MAPE :", test_mape)
+
+        print(
+            "MAE  :",
+            test_mae
+        )
+
+        print(
+            "RMSE :",
+            test_rmse
+        )
+
+        print(
+            "R2   :",
+            test_r2
+        )
+
+        print(
+            "MAPE :",
+            test_mape
+        )
 
         print("\nBaseline")
         print("--------")
-        print("MAE  :", baseline_mae)
-        print("RMSE :", baseline_rmse)
+
+        print(
+            "MAE  :",
+            baseline_mae
+        )
+
+        print(
+            "RMSE :",
+            baseline_rmse
+        )
 
         print("\nMLflow Model URI:")
-        print(model_info.model_uri)
+
+        print(
+            model_info.model_uri
+        )
 
         return model_info.model_uri
 
@@ -375,3 +568,4 @@ def train_model():
 if __name__ == "__main__":
 
     train_model()
+```
