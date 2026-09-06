@@ -3,7 +3,3 @@ bundle:
 
 include:
   - resources/*.yml
-
-  targets:
-  dev:
-    default: true
