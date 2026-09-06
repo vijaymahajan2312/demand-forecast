@@ -1,4 +1,3 @@
-```python
 # src/train.py
 
 import mlflow
