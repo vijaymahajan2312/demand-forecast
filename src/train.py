@@ -3,6 +3,10 @@
 import mlflow
 import mlflow.lightgbm
 
+
+
+mlflow.set_registry_uri("databricks-uc")
+
 import pandas as pd
 import numpy as np
 
@@ -31,6 +35,7 @@ DATA_PATH = "/Volumes/demand_catalog/default/demand_volume/demand_forecasting.cs
 
 EXPERIMENT_NAME = "/Shared/demand-forecasting"
 
+MODEL_NAME = "demand_catalog.default.demand_forecasting"
 
 MODEL_PARAMS = {
     "objective": "regression",
@@ -470,17 +475,16 @@ def train_model():
         })
 
         # -------------------------------------------------
-        # Log model
+        # Log and register model
         # -------------------------------------------------
 
         model_info = mlflow.lightgbm.log_model(
-
             model,
-
             name="model",
-
-            signature=signature
-        )
+            signature=signature,
+            registered_model_name=MODEL_NAME
+            )
+      
 
         # -------------------------------------------------
         # Output
