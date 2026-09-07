@@ -23,7 +23,8 @@ from lightgbm import LGBMRegressor
 from features import (
     create_features,
     FEATURES,
-    TARGET
+    TARGET,
+    prepare_model_features
 )
 
 
@@ -269,33 +270,7 @@ def train_model():
     X_test = test_df[FEATURES].copy()
     y_test = test_df[TARGET].copy()
 
-    # -----------------------------------------------------
-    # Clean feature names
-    # -----------------------------------------------------
-
-    (
-        X_train,
-        X_valid,
-        X_test
-    ) = clean_feature_names(
-        X_train,
-        X_valid,
-        X_test
-    )
-
-    # -----------------------------------------------------
-    # Prepare categorical features
-    # -----------------------------------------------------
-
-    (
-        X_train,
-        X_valid,
-        X_test
-    ) = prepare_categorical_features(
-        X_train,
-        X_valid,
-        X_test
-    )
+    X_train, X_valid, X_test = prepare_model_features(X_train, X_valid, X_test)
 
     print(
         "Number of features:",
