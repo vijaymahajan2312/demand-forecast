@@ -35,7 +35,7 @@ DATA_PATH = "/Volumes/demand_catalog/default/demand_volume/demand_forecasting.cs
 
 EXPERIMENT_NAME = "/Shared/demand-forecasting"
 
-MODEL_NAME = "demand_catalog.default.demand_forecasting"
+MODEL_NAME = "workspace.default.demand_forecasting"
 
 MODEL_PARAMS = {
     "objective": "regression",
