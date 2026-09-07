@@ -436,9 +436,7 @@ def train_model():
         # as the input example so categorical definitions
         # remain identical to the trained model.
 
-        input_example = X_train.iloc[
-            [0]
-        ].copy()
+        #input_example = X_train.iloc[[0]].copy()
 
         # -------------------------------------------------
         # MLflow logging
@@ -481,9 +479,7 @@ def train_model():
 
             name="model",
 
-            signature=signature,
-
-            input_example=input_example
+            signature=signature
         )
 
         # -------------------------------------------------
