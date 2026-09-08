@@ -16,8 +16,12 @@ resources:
           spec:
             environment_version: "2"
             dependencies:
-              - pandas
-              - numpy
-              - scikit-learn
-              - lightgbm
-              - mlflow
+              - pandas==1.5.3
+              - numpy==1.26.4
+              - scikit-learn==1.3.0
+              - lightgbm==4.7.0
+              - mlflow==3.16.0
+              - scipy==1.11.1
+              - cython==0.29.32
+              - skops==0.14.0
+              - jaraco-collections==5.1.0
