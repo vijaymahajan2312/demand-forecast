@@ -1,0 +1,25 @@
+resources:
+  jobs:
+    demand_forecasting_prediction:
+      name: demand_forecasting_prediction
+
+      tasks:
+        - task_key: generate_demand_predictions
+
+          spark_python_task:
+            python_file: ../src/predict.py
+
+          environment_key: default
+
+      environments:
+        - environment_key: default
+
+          spec:
+            environment_version: "2"
+
+            dependencies:
+              - pandas
+              - numpy
+              - scikit-learn
+              - lightgbm
+              - mlflow
