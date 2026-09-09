@@ -25,7 +25,6 @@ DATA_PATH = (
 )
 
 MODEL_NAME = "demand_catalog.default.demand_forecasting"
-
 MODEL_VERSION = "3"
 
 MODEL_URI = (
@@ -33,8 +32,19 @@ MODEL_URI = (
 )
 
 
+CATEGORICAL_COLUMNS = [
+    "Store_ID",
+    "Product_ID",
+    "Category",
+    "Region",
+    "Weather_Condition",
+    "Seasonality",
+    "Epidemic"
+]
+
+
 # ---------------------------------------------------------
-# Environment diagnostics
+# Environment
 # ---------------------------------------------------------
 
 print("=" * 60)
@@ -50,14 +60,14 @@ print()
 
 
 # ---------------------------------------------------------
-# Configure Unity Catalog model registry
+# MLflow configuration
 # ---------------------------------------------------------
 
 mlflow.set_registry_uri("databricks-uc")
 
 
 # ---------------------------------------------------------
-# Load raw data
+# Step 1 - Load data
 # ---------------------------------------------------------
 
 print("=" * 60)
@@ -76,7 +86,7 @@ print()
 
 
 # ---------------------------------------------------------
-# Create features
+# Step 2 - Create features
 # ---------------------------------------------------------
 
 print("=" * 60)
@@ -85,14 +95,21 @@ print("=" * 60)
 
 df_features = create_features(df)
 
-print("Feature-engineered rows:", len(df_features))
-print("Feature-engineered columns:", len(df_features.columns))
+print(
+    "Feature-engineered rows:",
+    len(df_features)
+)
+
+print(
+    "Feature-engineered columns:",
+    len(df_features.columns)
+)
 
 print()
 
 
 # ---------------------------------------------------------
-# Create model dataset
+# Step 3 - Prepare model data
 # ---------------------------------------------------------
 
 print("=" * 60)
@@ -111,7 +128,7 @@ print()
 
 
 # ---------------------------------------------------------
-# Prepare model features
+# Step 4 - Prepare model features
 # ---------------------------------------------------------
 
 print("=" * 60)
@@ -129,7 +146,7 @@ print()
 
 
 # ---------------------------------------------------------
-# Validate feature columns
+# Step 5 - Validate features
 # ---------------------------------------------------------
 
 print("=" * 60)
@@ -145,7 +162,7 @@ print()
 
 
 # ---------------------------------------------------------
-# Load registered model
+# Step 6 - Load registered model
 # ---------------------------------------------------------
 
 print("=" * 60)
@@ -160,37 +177,94 @@ model = mlflow.lightgbm.load_model(
 )
 
 print()
+
 print("LightGBM model loaded successfully!")
 
 print()
-
-
-# ---------------------------------------------------------
-# Display model information
-# ---------------------------------------------------------
-
-print("=" * 60)
-print("STEP 7 - Model information")
-print("=" * 60)
 
 print("Model type:")
 print(type(model))
 
 print()
 
-print("Model feature names:")
-print(model.feature_name_)
+
+# ---------------------------------------------------------
+# Step 7 - Inspect model metadata
+# ---------------------------------------------------------
+
+print("=" * 60)
+print("STEP 7 - Inspecting model metadata")
+print("=" * 60)
+
+if hasattr(model, "feature_name_"):
+
+    print("Model feature names:")
+    print(model.feature_name_)
+
+else:
+
+    print(
+        "Model does not expose feature_name_"
+    )
+
 
 print()
 
-print("Model categorical features:")
-print(model.categorical_feature_)
+print(
+    "Checking pandas categorical metadata..."
+)
+
+
+if hasattr(model, "pandas_categorical"):
+
+    pandas_categorical = (
+        model.pandas_categorical
+    )
+
+    print(
+        "pandas_categorical found."
+    )
+
+    print(
+        "Number of categorical metadata entries:",
+        len(pandas_categorical)
+    )
+
+    for i, categories in enumerate(
+        pandas_categorical
+    ):
+
+        print()
+
+        print(
+            f"Categorical metadata {i}:"
+        )
+
+        print(
+            "Number of categories:",
+            len(categories)
+        )
+
+        print(
+            "Categories:",
+            list(categories)
+        )
+
+else:
+
+    pandas_categorical = None
+
+    print(
+        "WARNING: pandas_categorical "
+        "metadata not found."
+    )
+
 
 print()
 
 
 # ---------------------------------------------------------
-# Prepare inference data
+# Step 8 - Prepare inference sample
 # ---------------------------------------------------------
 
 print("=" * 60)
@@ -201,112 +275,14 @@ X_sample = X.iloc[[0]].copy()
 
 y_actual = y.iloc[0]
 
-print("Sample shape:", X_sample.shape)
+print(
+    "Sample shape:",
+    X_sample.shape
+)
 
 print()
 
-print("Categorical columns in sample:")
-
-for col in X_sample.columns:
-
-    if str(X_sample[col].dtype) == "category":
-        print(
-            col,
-            "dtype =",
-            X_sample[col].dtype,
-            "categories =",
-            list(X_sample[col].cat.categories)
-        )
-
-print()
-
-
-# ---------------------------------------------------------
-# Align categorical columns with training model
-# ---------------------------------------------------------
-
-print("=" * 60)
-print("STEP 9 - Aligning categorical features")
-print("=" * 60)
-
-categorical_columns = [
-    "Store_ID",
-    "Product_ID",
-    "Category",
-    "Region",
-    "Weather_Condition",
-    "Seasonality",
-    "Epidemic"
-]
-
-
-for col in categorical_columns:
-
-    if col not in X_sample.columns:
-        continue
-
-    # Convert to string first
-    X_sample[col] = X_sample[col].astype(str)
-
-    # LightGBM needs categorical dtype during prediction.
-    #
-    # The categories are taken from the training model's
-    # stored pandas categorical metadata when available.
-
-    training_categories = None
-
-    if hasattr(model, "pandas_categorical"):
-
-        pandas_categorical = model.pandas_categorical
-
-        print(
-            "Stored pandas categorical metadata:",
-            len(pandas_categorical)
-        )
-
-        break
-
-
-# ---------------------------------------------------------
-# Reconstruct LightGBM categorical metadata
-# ---------------------------------------------------------
-
-if hasattr(model, "pandas_categorical"):
-
-    pandas_categorical = model.pandas_categorical
-
-    print()
-    print("Applying stored categorical metadata...")
-
-    categorical_index = 0
-
-    for col in categorical_columns:
-
-        if col not in X_sample.columns:
-            continue
-
-        if categorical_index >= len(pandas_categorical):
-            break
-
-        categories = pandas_categorical[categorical_index]
-
-        X_sample[col] = pd.Categorical(
-            X_sample[col],
-            categories=categories
-        )
-
-        print(
-            col,
-            "categories:",
-            list(categories)
-        )
-
-        categorical_index += 1
-
-
-print()
-
-print("Final inference dtypes:")
+print("Sample before categorical alignment:")
 
 print(X_sample.dtypes)
 
@@ -314,11 +290,218 @@ print()
 
 
 # ---------------------------------------------------------
-# Make prediction
+# Step 9 - Align categorical features
 # ---------------------------------------------------------
 
 print("=" * 60)
-print("STEP 10 - Making prediction")
+print("STEP 9 - Aligning categorical features")
+print("=" * 60)
+
+
+if pandas_categorical is not None:
+
+    print(
+        "Applying stored LightGBM "
+        "categorical metadata..."
+    )
+
+    if len(pandas_categorical) != len(
+        CATEGORICAL_COLUMNS
+    ):
+
+        print()
+        print(
+            "WARNING:"
+        )
+
+        print(
+            "Number of stored categorical "
+            "metadata entries:",
+            len(pandas_categorical)
+        )
+
+        print(
+            "Number of expected categorical "
+            "columns:",
+            len(CATEGORICAL_COLUMNS)
+        )
+
+        print()
+
+    for i, col in enumerate(
+        CATEGORICAL_COLUMNS
+    ):
+
+        if col not in X_sample.columns:
+
+            print(
+                f"Skipping {col} - "
+                "column not found"
+            )
+
+            continue
+
+        if i >= len(
+            pandas_categorical
+        ):
+
+            print(
+                f"No stored category metadata "
+                f"available for {col}"
+            )
+
+            continue
+
+        categories = (
+            pandas_categorical[i]
+        )
+
+        X_sample[col] = pd.Categorical(
+            X_sample[col].astype(str),
+            categories=categories
+        )
+
+        print(
+            f"{col}: "
+            f"{len(categories)} categories"
+        )
+
+
+else:
+
+    print(
+        "No pandas categorical metadata "
+        "available."
+    )
+
+
+print()
+
+print(
+    "Final inference dtypes:"
+)
+
+print(
+    X_sample.dtypes
+)
+
+print()
+
+
+# ---------------------------------------------------------
+# Step 10 - Ensure feature order
+# ---------------------------------------------------------
+
+print("=" * 60)
+print("STEP 10 - Ensuring feature order")
+print("=" * 60)
+
+
+if hasattr(model, "feature_name_"):
+
+    model_features = list(
+        model.feature_name_
+    )
+
+    print(
+        "Model expects:",
+        len(model_features),
+        "features"
+    )
+
+    print(
+        "Inference contains:",
+        len(X_sample.columns),
+        "features"
+    )
+
+    missing = [
+        col
+        for col in model_features
+        if col not in X_sample.columns
+    ]
+
+    extra = [
+        col
+        for col in X_sample.columns
+        if col not in model_features
+    ]
+
+    if missing:
+
+        raise ValueError(
+            f"Missing model features: {missing}"
+        )
+
+    if extra:
+
+        raise ValueError(
+            f"Unexpected inference features: {extra}"
+        )
+
+    X_sample = X_sample[
+        model_features
+    ]
+
+    print(
+        "Feature order: PASSED"
+    )
+
+else:
+
+    print(
+        "Model feature_name_ unavailable."
+    )
+
+
+print()
+
+
+# ---------------------------------------------------------
+# Step 11 - Final categorical inspection
+# ---------------------------------------------------------
+
+print("=" * 60)
+print("STEP 11 - Final categorical inspection")
+print("=" * 60)
+
+for col in CATEGORICAL_COLUMNS:
+
+    if col not in X_sample.columns:
+        continue
+
+    print(
+        col,
+        "| dtype =",
+        X_sample[col].dtype
+    )
+
+    if pd.api.types.is_categorical_dtype(
+        X_sample[col]
+    ):
+
+        print(
+            "  categories =",
+            list(
+                X_sample[col].cat.categories
+            )
+        )
+
+        print(
+            "  value =",
+            X_sample[col].iloc[0]
+        )
+
+
+print()
+
+
+# ---------------------------------------------------------
+# Step 12 - Prediction
+# ---------------------------------------------------------
+
+print("=" * 60)
+print("STEP 12 - Making prediction")
 print("=" * 60)
 
 prediction = model.predict(
@@ -326,25 +509,8 @@ prediction = model.predict(
 )
 
 predicted_demand = float(
-    np.asarray(prediction).reshape(-1)[0]
-)
-
-print("Predicted Demand:", predicted_demand)
-
-print()
-
-
-# ---------------------------------------------------------
-# Compare prediction with actual value
-# ---------------------------------------------------------
-
-print("=" * 60)
-print("STEP 11 - Prediction result")
-print("=" * 60)
-
-print(
-    "Actual Demand:   ",
-    float(y_actual)
+    np.asarray(prediction)
+    .reshape(-1)[0]
 )
 
 print(
@@ -352,8 +518,34 @@ print(
     predicted_demand
 )
 
+print()
+
+
+# ---------------------------------------------------------
+# Step 13 - Result
+# ---------------------------------------------------------
+
+print("=" * 60)
+print("STEP 13 - Prediction result")
+print("=" * 60)
+
+actual_demand = float(
+    y_actual
+)
+
 absolute_error = abs(
-    float(y_actual) - predicted_demand
+    actual_demand -
+    predicted_demand
+)
+
+print(
+    "Actual Demand:   ",
+    actual_demand
+)
+
+print(
+    "Predicted Demand:",
+    predicted_demand
 )
 
 print(
@@ -365,7 +557,7 @@ print()
 
 
 # ---------------------------------------------------------
-# Final result
+# Final
 # ---------------------------------------------------------
 
 print("=" * 60)
@@ -373,12 +565,28 @@ print("MODEL TEST COMPLETED SUCCESSFULLY")
 print("=" * 60)
 
 print()
-print("Model:", MODEL_NAME)
-print("Version:", MODEL_VERSION)
-print("Model URI:", MODEL_URI)
+
+print(
+    "Model:",
+    MODEL_NAME
+)
+
+print(
+    "Version:",
+    MODEL_VERSION
+)
+
+print(
+    "Model URI:",
+    MODEL_URI
+)
 
 print()
-print("The registered LightGBM model was successfully")
-print("loaded and used to generate a prediction.")
+
+print(
+    "The registered LightGBM model was "
+    "successfully loaded and used "
+    "for inference."
+)
 
 print("=" * 60)
