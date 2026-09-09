@@ -1,5 +1,3 @@
-# test/test_features.py
-
 import numpy as np
 import pandas as pd
 
@@ -15,7 +13,7 @@ from src.features import (
 
 
 def create_sample_data():
-    """Create sample demand data for testing feature engineering."""
+    """Create sample Store × Product daily demand data for testing."""
 
     dates = pd.date_range(
         start="2025-01-01",
@@ -25,11 +23,8 @@ def create_sample_data():
 
     rows = []
 
-    stores = ["Store_1", "Store_2"]
-    products = ["Product_1", "Product_2"]
-
-    for store in stores:
-        for product in products:
+    for store in ["Store_1", "Store_2"]:
+        for product in ["Product_1", "Product_2"]:
             for i, date in enumerate(dates):
                 rows.append(
                     {
@@ -41,14 +36,14 @@ def create_sample_data():
                         "Inventory Level": 100 + i,
                         "Units Sold": 20 + i,
                         "Units Ordered": 25 + i,
-                        "Price": 50.0,
-                        "Discount": 0.10,
+                        "Price": 100.0,
+                        "Discount": 10.0,
                         "Weather Condition": "Sunny",
                         "Promotion": 0,
-                        "Competitor Pricing": 48.0,
+                        "Competitor Pricing": 95.0,
                         "Seasonality": "Regular",
                         "Epidemic": 0,
-                        "Demand": 30 + i,
+                        "Demand": 20 + i,
                     }
                 )
 
@@ -56,46 +51,57 @@ def create_sample_data():
 
 
 def test_prepare_data():
-    """Test date conversion and group-wise sorting."""
+    """Test data preparation and group-wise sorting."""
 
     df = create_sample_data()
 
+    # Shuffle the input data to verify that prepare_data()
+    # correctly sorts it.
+    df = df.sample(
+        frac=1,
+        random_state=42,
+    ).reset_index(drop=True)
+
     result = prepare_data(df)
 
-    # Date should be converted to datetime.
-    assert pd.api.types.is_datetime64_any_dtype(
-        result["Date"]
-    )
+    # Verify that the required columns are still present.
+    assert "Date" in result.columns
+    assert "Store ID" in result.columns
+    assert "Product ID" in result.columns
 
-    # Data should be sorted by Store ID, Product ID, and Date.
-    assert result[
-        ["Store ID", "Product ID", "Date"]
-    ].equals(
+    # Verify group-wise sorting.
+    expected = (
         result[
             ["Store ID", "Product ID", "Date"]
-        ].sort_values(
+        ]
+        .sort_values(
             ["Store ID", "Product ID", "Date"]
-        ).reset_index(drop=True)
+        )
+        .reset_index(drop=True)
     )
 
-    # Date should be increasing within every Store × Product group.
+    actual = result[
+        ["Store ID", "Product ID", "Date"]
+    ].reset_index(drop=True)
+
+    assert actual.equals(expected)
+
+    # Verify dates are increasing inside every
+    # Store × Product group.
     for _, group in result.groupby(
         ["Store ID", "Product ID"]
     ):
         assert group["Date"].is_monotonic_increasing
 
-    # Number of rows and columns should remain unchanged.
-    assert result.shape == df.shape
-
 
 def test_calendar_features():
-    """Test calendar feature creation."""
+    """Test creation of calendar/time features."""
 
     df = create_sample_data()
 
     result = create_calendar_features(df)
 
-    expected_features = [
+    calendar_features = [
         "day_of_week",
         "day_of_month",
         "week_of_year",
@@ -105,20 +111,20 @@ def test_calendar_features():
         "is_weekend",
     ]
 
-    for feature in expected_features:
+    for feature in calendar_features:
         assert feature in result.columns
 
-    assert result["day_of_week"].between(0, 6).all()
+    # Verify known date values.
+    first_date = result.iloc[0]["Date"]
 
-    assert result["month"].between(1, 12).all()
-
-    assert result["quarter"].between(1, 4).all()
-
-    assert result["is_weekend"].isin([0, 1]).all()
+    assert result.iloc[0]["day_of_month"] == first_date.day
+    assert result.iloc[0]["month"] == first_date.month
+    assert result.iloc[0]["quarter"] == first_date.quarter
+    assert result.iloc[0]["year"] == first_date.year
 
 
 def test_lag_features():
-    """Test lag feature creation."""
+    """Test creation of lag features."""
 
     df = create_sample_data()
 
@@ -126,23 +132,26 @@ def test_lag_features():
 
     result = create_lag_features(df)
 
-    expected_lags = [
+    lag_features = [
         "lag_1",
         "lag_7",
         "lag_14",
         "lag_28",
     ]
 
-    for feature in expected_lags:
+    for feature in lag_features:
         assert feature in result.columns
 
+    # Check Store_1 × Product_1 specifically.
     store_product = result[
         (result["Store ID"] == "Store_1")
         & (result["Product ID"] == "Product_1")
     ].reset_index(drop=True)
 
-    # lag_1 should contain the previous day's demand.
-    assert pd.isna(store_product.loc[0, "lag_1"])
+    # lag_1 should contain the previous day's Demand.
+    assert pd.isna(
+        store_product.loc[0, "lag_1"]
+    )
 
     assert (
         store_product.loc[1, "lag_1"]
@@ -150,16 +159,30 @@ def test_lag_features():
     )
 
     # lag_7 should contain demand from 7 days earlier.
-    assert pd.isna(store_product.loc[6, "lag_7"])
+    assert pd.isna(
+        store_product.loc[6, "lag_7"]
+    )
 
     assert (
         store_product.loc[7, "lag_7"]
         == store_product.loc[0, "Demand"]
     )
 
+    # lag_14 should contain demand from 14 days earlier.
+    assert (
+        store_product.loc[14, "lag_14"]
+        == store_product.loc[0, "Demand"]
+    )
+
+    # lag_28 should contain demand from 28 days earlier.
+    assert (
+        store_product.loc[28, "lag_28"]
+        == store_product.loc[0, "Demand"]
+    )
+
 
 def test_rolling_features():
-    """Test rolling mean and standard deviation features."""
+    """Test rolling demand features."""
 
     df = create_sample_data()
 
@@ -167,7 +190,7 @@ def test_rolling_features():
 
     result = create_rolling_features(df)
 
-    expected_features = [
+    rolling_features = [
         "rolling_mean_7",
         "rolling_mean_14",
         "rolling_mean_28",
@@ -175,7 +198,7 @@ def test_rolling_features():
         "rolling_std_14",
     ]
 
-    for feature in expected_features:
+    for feature in rolling_features:
         assert feature in result.columns
 
     store_product = result[

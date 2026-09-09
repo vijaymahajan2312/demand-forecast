@@ -3,30 +3,15 @@
 import mlflow
 import mlflow.lightgbm
 
-
-
 mlflow.set_registry_uri("databricks-uc")
 
-import pandas as pd
 import numpy as np
-
-from mlflow.models import infer_signature
-
-from sklearn.metrics import (
-    mean_absolute_error,
-    mean_squared_error,
-    r2_score
-)
-
+import pandas as pd
 from lightgbm import LGBMRegressor
+from mlflow.models import infer_signature
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-from features import (
-    create_features,
-    FEATURES,
-    TARGET,
-    prepare_model_features
-)
-
+from features import FEATURES, TARGET, create_features, prepare_model_features
 
 # ---------------------------------------------------------
 # Configuration

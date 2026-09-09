@@ -5,9 +5,8 @@ from datetime import datetime, timezone
 
 import mlflow
 import mlflow.lightgbm
-
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from features import (
     create_features,
@@ -15,7 +14,6 @@ from features import (
     prepare_model_features,
     validate_features,
 )
-
 
 # =========================================================
 # CONFIGURATION
