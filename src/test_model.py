@@ -3,7 +3,7 @@
 import sys
 
 import mlflow
-import mlflow.pyfunc
+import mlflow.lightgbm
 import pandas as pd
 import numpy as np
 
@@ -155,56 +155,160 @@ print("=" * 60)
 print("Model URI:")
 print(MODEL_URI)
 
-model = mlflow.pyfunc.load_model(
+model = mlflow.lightgbm.load_model(
     MODEL_URI
 )
 
 print()
-print("Model loaded successfully!")
+print("LightGBM model loaded successfully!")
 
 print()
 
 
 # ---------------------------------------------------------
-# Display model signature
+# Display model information
 # ---------------------------------------------------------
 
 print("=" * 60)
-print("STEP 7 - Model signature")
+print("STEP 7 - Model information")
 print("=" * 60)
 
-if model.metadata.signature is not None:
+print("Model type:")
+print(type(model))
 
-    print(model.metadata.signature)
+print()
 
-else:
+print("Model feature names:")
+print(model.feature_name_)
 
-    print("Model does not contain a signature.")
+print()
+
+print("Model categorical features:")
+print(model.categorical_feature_)
 
 print()
 
 
 # ---------------------------------------------------------
-# Select one test row
+# Prepare inference data
 # ---------------------------------------------------------
 
 print("=" * 60)
-print("STEP 8 - Selecting test row")
+print("STEP 8 - Preparing inference data")
 print("=" * 60)
-
-# Select the first available row.
-# This row already contains all required
-# lag and rolling features because create_features()
-# removed rows with insufficient history.
 
 X_sample = X.iloc[[0]].copy()
 
 y_actual = y.iloc[0]
 
-
 print("Sample shape:", X_sample.shape)
 
-print("Actual Demand:", y_actual)
+print()
+
+print("Categorical columns in sample:")
+
+for col in X_sample.columns:
+
+    if str(X_sample[col].dtype) == "category":
+        print(
+            col,
+            "dtype =",
+            X_sample[col].dtype,
+            "categories =",
+            list(X_sample[col].cat.categories)
+        )
+
+print()
+
+
+# ---------------------------------------------------------
+# Align categorical columns with training model
+# ---------------------------------------------------------
+
+print("=" * 60)
+print("STEP 9 - Aligning categorical features")
+print("=" * 60)
+
+categorical_columns = [
+    "Store_ID",
+    "Product_ID",
+    "Category",
+    "Region",
+    "Weather_Condition",
+    "Seasonality",
+    "Epidemic"
+]
+
+
+for col in categorical_columns:
+
+    if col not in X_sample.columns:
+        continue
+
+    # Convert to string first
+    X_sample[col] = X_sample[col].astype(str)
+
+    # LightGBM needs categorical dtype during prediction.
+    #
+    # The categories are taken from the training model's
+    # stored pandas categorical metadata when available.
+
+    training_categories = None
+
+    if hasattr(model, "pandas_categorical"):
+
+        pandas_categorical = model.pandas_categorical
+
+        print(
+            "Stored pandas categorical metadata:",
+            len(pandas_categorical)
+        )
+
+        break
+
+
+# ---------------------------------------------------------
+# Reconstruct LightGBM categorical metadata
+# ---------------------------------------------------------
+
+if hasattr(model, "pandas_categorical"):
+
+    pandas_categorical = model.pandas_categorical
+
+    print()
+    print("Applying stored categorical metadata...")
+
+    categorical_index = 0
+
+    for col in categorical_columns:
+
+        if col not in X_sample.columns:
+            continue
+
+        if categorical_index >= len(pandas_categorical):
+            break
+
+        categories = pandas_categorical[categorical_index]
+
+        X_sample[col] = pd.Categorical(
+            X_sample[col],
+            categories=categories
+        )
+
+        print(
+            col,
+            "categories:",
+            list(categories)
+        )
+
+        categorical_index += 1
+
+
+print()
+
+print("Final inference dtypes:")
+
+print(X_sample.dtypes)
 
 print()
 
@@ -214,10 +318,12 @@ print()
 # ---------------------------------------------------------
 
 print("=" * 60)
-print("STEP 9 - Making prediction")
+print("STEP 10 - Making prediction")
 print("=" * 60)
 
-prediction = model.predict(X_sample)
+prediction = model.predict(
+    X_sample
+)
 
 predicted_demand = float(
     np.asarray(prediction).reshape(-1)[0]
@@ -233,17 +339,27 @@ print()
 # ---------------------------------------------------------
 
 print("=" * 60)
-print("STEP 10 - Prediction result")
+print("STEP 11 - Prediction result")
 print("=" * 60)
 
-print("Actual Demand:   ", float(y_actual))
-print("Predicted Demand:", predicted_demand)
+print(
+    "Actual Demand:   ",
+    float(y_actual)
+)
+
+print(
+    "Predicted Demand:",
+    predicted_demand
+)
 
 absolute_error = abs(
     float(y_actual) - predicted_demand
 )
 
-print("Absolute Error:   ", absolute_error)
+print(
+    "Absolute Error:  ",
+    absolute_error
+)
 
 print()
 
@@ -262,7 +378,7 @@ print("Version:", MODEL_VERSION)
 print("Model URI:", MODEL_URI)
 
 print()
-print("The registered model was successfully loaded")
-print("and used to generate a prediction.")
+print("The registered LightGBM model was successfully")
+print("loaded and used to generate a prediction.")
 
 print("=" * 60)
