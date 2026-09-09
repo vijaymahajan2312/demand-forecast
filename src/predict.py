@@ -1,5 +1,8 @@
 # src/predict.py
 
+import sys
+from datetime import datetime, timezone
+
 import mlflow
 import mlflow.lightgbm
 
@@ -14,9 +17,9 @@ from features import (
 )
 
 
-# ---------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------
+# =========================================================
+# CONFIGURATION
+# =========================================================
 
 MODEL_NAME = (
     "demand_catalog.default.demand_forecasting"
@@ -28,6 +31,18 @@ MODEL_URI = (
     f"models:/{MODEL_NAME}/{MODEL_VERSION}"
 )
 
+INPUT_TABLE = (
+    "demand_catalog.default.demand_forecast_input"
+)
+
+OUTPUT_TABLE = (
+    "demand_catalog.default.demand_forecast_predictions"
+)
+
+
+# =========================================================
+# CATEGORICAL COLUMNS
+# =========================================================
 
 CATEGORICAL_COLUMNS = [
     "Store_ID",
@@ -40,59 +55,126 @@ CATEGORICAL_COLUMNS = [
 ]
 
 
-# ---------------------------------------------------------
-# Load model
-# ---------------------------------------------------------
+# =========================================================
+# LOAD REGISTERED MODEL
+# =========================================================
 
 def load_model():
 
-    print(
-        "Loading registered model:"
-    )
+    print("=" * 60)
+    print("LOADING REGISTERED MODEL")
+    print("=" * 60)
 
-    print(
-        MODEL_URI
-    )
+    print()
+    print("Model URI:")
+    print(MODEL_URI)
+    print()
 
-    # Unity Catalog model registry
+    # Unity Catalog Model Registry
     mlflow.set_registry_uri(
         "databricks-uc"
     )
 
-    # Use LightGBM flavor instead of pyfunc.
-    #
-    # This is important because our model was trained
-    # using pandas categorical features.
+    # Use LightGBM flavor.
+    # This is important because the trained model
+    # uses pandas categorical features.
     model = mlflow.lightgbm.load_model(
         MODEL_URI
     )
 
-    print(
-        "Model loaded successfully."
-    )
-
+    print()
+    print("Model loaded successfully.")
     print(
         "Model type:",
         type(model)
     )
+    print()
 
     return model
 
 
-# ---------------------------------------------------------
-# Prepare inference data
-# ---------------------------------------------------------
+# =========================================================
+# LOAD INPUT DATA
+# =========================================================
+
+def load_input_data(spark):
+
+    print("=" * 60)
+    print("LOADING INPUT DELTA TABLE")
+    print("=" * 60)
+
+    print()
+    print("Input table:")
+    print(INPUT_TABLE)
+    print()
+
+    # Read Delta table
+    df = (
+        spark
+        .table(INPUT_TABLE)
+        .toPandas()
+    )
+
+    print(
+        "Input rows:",
+        len(df)
+    )
+
+    print(
+        "Input columns:",
+        len(df.columns)
+    )
+
+    print()
+
+    # -----------------------------------------------------
+    # Convert Delta-safe column names back to the original
+    # names expected by features.py
+    # -----------------------------------------------------
+
+    df = df.rename(
+        columns={
+            "Store_ID": "Store ID",
+            "Product_ID": "Product ID",
+            "Inventory_Level": "Inventory Level",
+            "Units_Sold": "Units Sold",
+            "Units_Ordered": "Units Ordered",
+            "Weather_Condition": "Weather Condition",
+            "Competitor_Pricing": "Competitor Pricing",
+        }
+    )
+
+    print(
+        "Columns after renaming:"
+    )
+
+    for column in df.columns:
+        print(
+            " -",
+            column
+        )
+
+    print()
+
+    return df
+
+
+# =========================================================
+# PREPARE PREDICTION DATA
+# =========================================================
 
 def prepare_prediction_data(
     input_data
 ):
 
-    print(
-        "Creating prediction features..."
-    )
+    print("=" * 60)
+    print("FEATURE ENGINEERING")
+    print("=" * 60)
+
+    print()
 
     # -----------------------------------------------------
-    # Feature engineering
+    # Create exactly the same features used during training
     # -----------------------------------------------------
 
     df_features = create_features(
@@ -104,13 +186,27 @@ def prepare_prediction_data(
         len(df_features)
     )
 
+    print(
+        "Feature-engineered columns:",
+        len(df_features.columns)
+    )
+
+    print()
+
     # -----------------------------------------------------
-    # Get model X and y
+    # Get X and y
     # -----------------------------------------------------
 
-    X, _ = get_model_data(
+    X, y = get_model_data(
         df_features
     )
+
+    print(
+        "Model feature count:",
+        len(X.columns)
+    )
+
+    print()
 
     # -----------------------------------------------------
     # Prepare categorical and numeric features
@@ -121,7 +217,7 @@ def prepare_prediction_data(
     )
 
     # -----------------------------------------------------
-    # Validate features
+    # Validate model features
     # -----------------------------------------------------
 
     validate_features(
@@ -129,25 +225,37 @@ def prepare_prediction_data(
     )
 
     print(
-        "Feature validation passed."
+        "Feature validation: PASSED"
     )
 
-    return X
+    print()
+
+    return (
+        df_features,
+        X,
+        y
+    )
 
 
-# ---------------------------------------------------------
-# Align categorical features
-# ---------------------------------------------------------
+# =========================================================
+# ALIGN FEATURES WITH TRAINED MODEL
+# =========================================================
 
-def align_categorical_features(
+def align_features_with_model(
     model,
     X
 ):
 
+    print("=" * 60)
+    print("ALIGNING FEATURES WITH MODEL")
+    print("=" * 60)
+
+    print()
+
     X = X.copy()
 
     # -----------------------------------------------------
-    # Get model feature order
+    # Get feature names from trained LightGBM model
     # -----------------------------------------------------
 
     if hasattr(
@@ -159,99 +267,96 @@ def align_categorical_features(
             model.feature_name_
         )
 
-        missing = [
+        print(
+            "Model expects:",
+            len(model_features),
+            "features"
+        )
+
+        print()
+
+        # -------------------------------------------------
+        # Check for missing features
+        # -------------------------------------------------
+
+        missing_features = [
             col
             for col in model_features
             if col not in X.columns
         ]
 
-        extra = [
+        if missing_features:
+
+            raise ValueError(
+                "Missing model features: "
+                f"{missing_features}"
+            )
+
+        # -------------------------------------------------
+        # Check for unexpected features
+        # -------------------------------------------------
+
+        extra_features = [
             col
             for col in X.columns
             if col not in model_features
         ]
 
-        if missing:
+        if extra_features:
 
             raise ValueError(
-                f"Missing model features: {missing}"
+                "Unexpected model features: "
+                f"{extra_features}"
             )
 
-        if extra:
-
-            raise ValueError(
-                f"Unexpected features: {extra}"
-            )
+        # -------------------------------------------------
+        # Force exact same feature order as training
+        # -------------------------------------------------
 
         X = X[
             model_features
         ]
 
     # -----------------------------------------------------
-    # LightGBM categorical metadata
+    # Preserve pandas categorical dtype
     # -----------------------------------------------------
-
-    #
-    # In our tested model:
-    #
-    # model.pandas_categorical
-    #
-    # is not available.
-    #
-    # Therefore we preserve the categorical columns
-    # generated by prepare_model_features().
-    #
 
     for col in CATEGORICAL_COLUMNS:
 
-        if col not in X.columns:
-            continue
+        if col in X.columns:
 
-        X[col] = X[col].astype(
-            "category"
-        )
+            X[col] = X[col].astype(
+                "category"
+            )
+
+    print(
+        "Feature alignment: PASSED"
+    )
+
+    print(
+        "Final prediction shape:",
+        X.shape
+    )
+
+    print()
 
     return X
 
 
-# ---------------------------------------------------------
-# Prediction
-# ---------------------------------------------------------
+# =========================================================
+# GENERATE PREDICTIONS
+# =========================================================
 
-def predict(
+def generate_predictions(
     model,
-    input_data
+    X
 ):
 
-    # -----------------------------------------------------
-    # Prepare features
-    # -----------------------------------------------------
+    print("=" * 60)
+    print("GENERATING PREDICTIONS")
+    print("=" * 60)
 
-    X = prepare_prediction_data(
-        input_data
-    )
-
-    # -----------------------------------------------------
-    # Align categorical features
-    # -----------------------------------------------------
-
-    X = align_categorical_features(
-        model,
-        X
-    )
-
-    print(
-        "Final prediction feature shape:",
-        X.shape
-    )
-
-    print(
-        "Final feature names:"
-    )
-
-    print(
-        list(X.columns)
-    )
+    print()
 
     # -----------------------------------------------------
     # Generate predictions
@@ -262,7 +367,7 @@ def predict(
     )
 
     # -----------------------------------------------------
-    # Prevent negative demand
+    # Demand cannot be negative
     # -----------------------------------------------------
 
     predictions = np.maximum(
@@ -270,53 +375,395 @@ def predict(
         0
     )
 
+    print(
+        "Predictions generated:",
+        len(predictions)
+    )
+
+    print(
+        "Minimum prediction:",
+        float(
+            np.min(predictions)
+        )
+    )
+
+    print(
+        "Maximum prediction:",
+        float(
+            np.max(predictions)
+        )
+    )
+
+    print(
+        "Average prediction:",
+        float(
+            np.mean(predictions)
+        )
+    )
+
+    print()
+
     return predictions
 
 
-# ---------------------------------------------------------
-# Example
-# ---------------------------------------------------------
+# =========================================================
+# BUILD PREDICTION OUTPUT
+# =========================================================
 
-if __name__ == "__main__":
+def build_prediction_output(
+    df_features,
+    y,
+    predictions
+):
 
     print("=" * 60)
-    print(
-        "DEMAND FORECASTING PREDICTION"
-    )
+    print("BUILDING PREDICTION OUTPUT")
     print("=" * 60)
 
     print()
+
+    output = pd.DataFrame()
+
+    # -----------------------------------------------------
+    # Date
+    # -----------------------------------------------------
+
+    output["Date"] = (
+        df_features["Date"].values
+    )
+
+    # -----------------------------------------------------
+    # Store
+    # -----------------------------------------------------
+
+    output["Store_ID"] = (
+        df_features["Store ID"].values
+    )
+
+    # -----------------------------------------------------
+    # Product
+    # -----------------------------------------------------
+
+    output["Product_ID"] = (
+        df_features["Product ID"].values
+    )
+
+    # -----------------------------------------------------
+    # Actual demand
+    # -----------------------------------------------------
+
+    output["Actual_Demand"] = (
+        y.values
+    )
+
+    # -----------------------------------------------------
+    # Predicted demand
+    # -----------------------------------------------------
+
+    output["Predicted_Demand"] = (
+        predictions
+    )
+
+    # -----------------------------------------------------
+    # Absolute error
+    # -----------------------------------------------------
+
+    output["Absolute_Error"] = np.abs(
+        output["Actual_Demand"]
+        -
+        output["Predicted_Demand"]
+    )
+
+    # -----------------------------------------------------
+    # Model information
+    # -----------------------------------------------------
+
+    output["Model_Name"] = (
+        MODEL_NAME
+    )
+
+    output["Model_Version"] = (
+        MODEL_VERSION
+    )
+
+    # -----------------------------------------------------
+    # Prediction timestamp
+    # -----------------------------------------------------
+
+    output["Prediction_Timestamp"] = (
+        datetime.now(
+            timezone.utc
+        )
+    )
+
+    print(
+        "Output rows:",
+        len(output)
+    )
+
+    print()
+
+    print(
+        "Output columns:"
+    )
+
+    for column in output.columns:
+        print(
+            " -",
+            column
+        )
+
+    print()
+
+    return output
+
+
+# =========================================================
+# SAVE PREDICTIONS TO DELTA
+# =========================================================
+
+def save_predictions(
+    spark,
+    output
+):
+
+    print("=" * 60)
+    print("SAVING PREDICTIONS")
+    print("=" * 60)
+
+    print()
+
+    print(
+        "Output table:"
+    )
+
+    print(
+        OUTPUT_TABLE
+    )
+
+    print()
+
+    # -----------------------------------------------------
+    # Convert Pandas DataFrame to Spark DataFrame
+    # -----------------------------------------------------
+
+    prediction_df = (
+        spark
+        .createDataFrame(
+            output
+        )
+    )
+
+    # -----------------------------------------------------
+    # Save as Delta table
+    # -----------------------------------------------------
+
+    (
+        prediction_df
+        .write
+        .format("delta")
+        .mode("overwrite")
+        .option(
+            "overwriteSchema",
+            "true"
+        )
+        .saveAsTable(
+            OUTPUT_TABLE
+        )
+    )
+
+    print()
+    print(
+        "Predictions saved successfully."
+    )
+    print()
+
+
+# =========================================================
+# MAIN PIPELINE
+# =========================================================
+
+def main():
+
+    print("=" * 60)
+    print("DEMAND FORECASTING PREDICTION JOB")
+    print("=" * 60)
+
+    print()
+
+    # -----------------------------------------------------
+    # Environment information
+    # -----------------------------------------------------
+
+    print(
+        "Python:",
+        sys.version
+    )
+
+    print(
+        "Pandas:",
+        pd.__version__
+    )
+
+    print(
+        "NumPy:",
+        np.__version__
+    )
+
+    print(
+        "MLflow:",
+        mlflow.__version__
+    )
+
+    print()
+
+    # -----------------------------------------------------
+    # Create Spark session
+    # -----------------------------------------------------
+
+    from pyspark.sql import SparkSession
+
+    spark = (
+        SparkSession
+        .builder
+        .getOrCreate()
+    )
+
+    # -----------------------------------------------------
+    # STEP 1
+    # Load registered model
+    # -----------------------------------------------------
 
     model = load_model()
 
+    # -----------------------------------------------------
+    # STEP 2
+    # Load input data
+    # -----------------------------------------------------
+
+    input_data = load_input_data(
+        spark
+    )
+
+    # -----------------------------------------------------
+    # STEP 3
+    # Feature engineering
+    # -----------------------------------------------------
+
+    (
+        df_features,
+        X,
+        y
+    ) = prepare_prediction_data(
+        input_data
+    )
+
+    # -----------------------------------------------------
+    # STEP 4
+    # Align features with model
+    # -----------------------------------------------------
+
+    X = align_features_with_model(
+        model,
+        X
+    )
+
+    # -----------------------------------------------------
+    # STEP 5
+    # Generate predictions
+    # -----------------------------------------------------
+
+    predictions = generate_predictions(
+        model,
+        X
+    )
+
+    # -----------------------------------------------------
+    # STEP 6
+    # Build prediction output
+    # -----------------------------------------------------
+
+    output = build_prediction_output(
+        df_features,
+        y,
+        predictions
+    )
+
+    # -----------------------------------------------------
+    # STEP 7
+    # Save predictions
+    # -----------------------------------------------------
+
+    save_predictions(
+        spark,
+        output
+    )
+
+    # -----------------------------------------------------
+    # FINAL SUMMARY
+    # -----------------------------------------------------
+
+    print("=" * 60)
+    print("PREDICTION JOB COMPLETED SUCCESSFULLY")
+    print("=" * 60)
+
     print()
 
     print(
-        "Model loaded and ready for prediction."
-    )
-
-    print()
-
-    print(
-        "IMPORTANT:"
+        "Model:",
+        MODEL_NAME
     )
 
     print(
-        "Call predict(model, input_data)"
+        "Model Version:",
+        MODEL_VERSION
     )
 
     print(
-        "with a DataFrame containing the raw"
+        "Input Table:",
+        INPUT_TABLE
     )
 
     print(
-        "demand forecasting input columns."
+        "Output Table:",
+        OUTPUT_TABLE
+    )
+
+    print(
+        "Predictions:",
+        len(predictions)
+    )
+
+    print(
+        "Average Predicted Demand:",
+        float(
+            np.mean(predictions)
+        )
+    )
+
+    print(
+        "Minimum Predicted Demand:",
+        float(
+            np.min(predictions)
+        )
+    )
+
+    print(
+        "Maximum Predicted Demand:",
+        float(
+            np.max(predictions)
+        )
     )
 
     print()
 
     print("=" * 60)
-    print(
-        "PREDICT MODULE READY"
-    )
-    print("=" * 60)
+
+
+# =========================================================
+# ENTRY POINT
+# =========================================================
+
+if __name__ == "__main__":
+
+    main()
